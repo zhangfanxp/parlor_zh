@@ -64,7 +64,8 @@ Open `.env` in your editor. You can configure:
 > [!TIP]
 > If you prefer not to modify the `.env` file, you can directly set the environment variable in your terminal session before launching the server:
 > ```bash
-> export MODEL_PATH="/path/to/your/gemma-4-E2B-it.litertlm"
+> 建议把模型放到当前项目的models文件夹下
+> export MODEL_PATH="～/Documents/parlor_zh/models/gemma-4-E2B-it.litertlm"
 > ```
 
 ### 4. Install Dependencies & Start the Server
