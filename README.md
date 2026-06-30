@@ -65,14 +65,17 @@ Open `.env` in your editor. You can configure:
 > If you prefer not to modify the `.env` file, you can directly set the environment variable in your terminal session before launching the server:
 > ```bash
 > 建议把模型放到当前项目的models文件夹下
-> export MODEL_PATH="～/Documents/parlor_zh/models/gemma-4-E2B-it.litertlm"
+> export MODEL_PATH="/Users/frank/Documents/parlor_zh/models/gemma-4-E2B-it.litertlm"
 > ```
 
 ### 4. Install Dependencies & Start the Server
 ```bash
 cd src
+uv venv && source .venv/bin/activate
+
 uv sync
 # If you exported MODEL_PATH in the terminal, it will override the .env setting automatically
+
 uv run server.py
 ```
 
