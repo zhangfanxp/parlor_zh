@@ -1,20 +1,12 @@
-# Parlor
+# Parlor (Edge TTS Chinese Edition)
 
-On-device, real-time multimodal AI. Have natural voice and vision conversations with an AI that runs entirely on your machine.
+On-device real-time multimodal AI (voice + vision), updated with **Edge TTS** to support high-quality Chinese and English voice generation.
 
-Parlor uses [Gemma 4 E2B](https://huggingface.co/google/gemma-4-E2B-it) for understanding speech and vision, and [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) for text-to-speech. You talk, show your camera, and it talks back, all locally.
+Parlor uses [Gemma 4 E2B](https://huggingface.co/google/gemma-4-E2B-it) for understanding speech and vision (running entirely locally on your Mac's GPU), and **Edge TTS** (cloud-based) for low-latency, natural speech synthesis.
 
 https://github.com/user-attachments/assets/cb0ffb2e-f84f-48e7-872c-c5f7b5c6d51f
 
 > **Research preview.** This is an early experiment. Expect rough edges and bugs.
-
-# Why?
-
-I'm [self-hosting a totally free voice AI](https://www.fikrikarim.com/bule-ai-initial-release/) on my home server to help people learn speaking English. It has hundreds of monthly active users, and I've been thinking about how to keep it free while making it sustainable.
-
-The obvious answer: run everything on-device, eliminating any server cost. Six months ago I needed an RTX 5090 to run just the voice models in real-time.
-
-Google just released a super capable small model that I can run on my M3 Pro in real-time, with vision too! Sure you can't do agentic coding with this, but it is a game-changer for people learning a new language. Imagine a few years from now that people can run this locally on their phones. They can point their camera at objects and talk about them. And this model is multi-lingual, so people can always fallback to their native language if they want. This is essentially what OpenAI demoed a few years ago.
 
 ## How it works
 
@@ -23,80 +15,102 @@ Browser (mic + camera)
     │
     │  WebSocket (audio PCM + JPEG frames)
     ▼
-FastAPI server
-    ├── Gemma 4 E2B via LiteRT-LM (GPU)  →  understands speech + vision
-    └── Kokoro TTS (MLX on Mac, ONNX on Linux)  →  speaks back
+    FastAPI server
+    ├── Gemma 4 E2B via LiteRT-LM (GPU)  →  understands speech + vision (100% Local)
+    └── Edge TTS (Microsoft Cloud API)   →  generates voice response (Online, multilingual)
     │
     │  WebSocket (streamed audio chunks)
     ▼
-Browser (playback + transcript)
+    Browser (playback + transcript)
 ```
 
 - **Voice Activity Detection** in the browser ([Silero VAD](https://github.com/ricky0123/vad)). Hands-free, no push-to-talk.
 - **Barge-in.** Interrupt the AI mid-sentence by speaking.
-- **Sentence-level TTS streaming.** Audio starts playing before the full response is generated.
+- **Sentence-level TTS streaming.** Audio starts playing before the full response is finished generating.
+- **Multilingual Support.** System prompts are optimized for Chinese interaction and match the spoken language dynamically.
 
 ## Requirements
 
-- Python 3.12+
-- macOS with Apple Silicon, or Linux with a supported GPU
-- ~3 GB free RAM for the model
+- macOS with Apple Silicon (M1/M2/M3/M4 Series)
+- Python 3.12 (standard for running current dependencies)
+- Active internet connection (required for **Edge TTS** voice generation; LLM/vision inference runs completely offline)
+- ~3 GB free RAM for the Gemma 4 E2B model
 
-## Quick start
+## Deployment & Quick Start (macOS)
 
+Follow these steps to deploy and run Parlor on a Mac device:
+
+### 1. Install uv (Python Package Manager)
+We use `uv` for lightning-fast dependency resolution and virtual environment management.
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 2. Clone and Prepare the Codebase
 ```bash
 git clone https://github.com/fikrikarim/parlor.git
 cd parlor
+```
 
-# Install uv if you don't have it
-curl -LsSf https://astral.sh/uv/install.sh | sh
+### 3. Configure Environment Variables
+Create your local `.env` file by copying the template:
+```bash
+cp .env.example .env
+```
+Open `.env` in your editor. You can configure:
+- `TTS_VOICE`: The voice used by Edge TTS (defaults to `zh-CN-XiaoxiaoNeural` for natural Chinese female voice).
+- `MODEL_PATH`: If you have already downloaded `gemma-4-E2B-it.litertlm` locally, uncomment and point it to the file path. Otherwise, leave it commented, and it will auto-download from HuggingFace on first run.
 
+> [!TIP]
+> If you prefer not to modify the `.env` file, you can directly set the environment variable in your terminal session before launching the server:
+> ```bash
+> export MODEL_PATH="/path/to/your/gemma-4-E2B-it.litertlm"
+> ```
+
+### 4. Install Dependencies & Start the Server
+```bash
 cd src
 uv sync
+# If you exported MODEL_PATH in the terminal, it will override the .env setting automatically
 uv run server.py
 ```
 
-Open [http://localhost:8000](http://localhost:8000), grant camera and microphone access, and start talking.
+### 5. Access the Web UI
+Open [http://localhost:8000](http://localhost:8000) in Safari or Chrome, grant camera and microphone permissions, and start talking to the AI!
 
-Models are downloaded automatically on first run (~2.6 GB for Gemma 4 E2B, plus TTS models).
+---
 
-## Configuration
+## Configuration Reference
 
-| Variable     | Default                        | Description                                    |
-| ------------ | ------------------------------ | ---------------------------------------------- |
-| `MODEL_PATH` | auto-download from HuggingFace | Path to a local `gemma-4-E2B-it.litertlm` file |
-| `PORT`       | `8000`                         | Server port                                    |
+You can configure the following environment variables inside the `.env` file in the root directory:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `MODEL_PATH` | auto-download | Path to a local `gemma-4-E2B-it.litertlm` file (avoids downloading on launch) |
+| `TTS_VOICE` | `zh-CN-XiaoxiaoNeural` | Microsoft Edge voice ID. E.g., `zh-CN-XiaoxiaoNeural` (Chinese Female), `zh-CN-YunxiNeural` (Chinese Male), `en-US-AriaNeural` (English) |
+| `PORT` | `8000` | Port of the FastAPI server |
 
 ## Performance (Apple M3 Pro)
 
-| Stage                            | Time          |
-| -------------------------------- | ------------- |
-| Speech + vision understanding    | ~1.8-2.2s     |
-| Response generation (~25 tokens) | ~0.3s         |
-| Text-to-speech (1-3 sentences)   | ~0.3-0.7s     |
-| **Total end-to-end**             | **~2.5-3.0s** |
+| Stage | Time |
+| :--- | :--- |
+| Speech + vision understanding | ~1.8 - 2.2s |
+| Response generation (~25 tokens) | ~0.3s |
+| Edge TTS voice synthesis | ~0.2 - 0.4s |
+| **Total end-to-end** | **~2.3 - 2.8s** |
 
-Decode speed: ~83 tokens/sec on GPU (Apple M3 Pro).
-
-## Project structure
+## Project Structure
 
 ```
 src/
-├── server.py              # FastAPI WebSocket server + Gemma 4 inference
-├── tts.py                 # Platform-aware TTS (MLX on Mac, ONNX on Linux)
-├── index.html             # Frontend UI (VAD, camera, audio playback)
-├── pyproject.toml         # Dependencies
+├── server.py              # FastAPI WebSocket server + Gemma 4 inference (system prompts optimized for Chinese)
+├── tts.py                 # Edge TTS engine (decodes cloud MP3 streams to raw 24kHz float32 PCM on the fly)
+├── index.html             # Frontend HTML (VAD, camera frame capture, audio player)
+├── pyproject.toml         # Dependencies managed by uv (including edge-tts and soundfile)
 └── benchmarks/
     ├── bench.py           # End-to-end WebSocket benchmark
     └── benchmark_tts.py   # TTS backend comparison
 ```
-
-## Acknowledgments
-
-- [Gemma 4](https://ai.google.dev/gemma) by Google DeepMind
-- [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) by Google AI Edge
-- [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) TTS by Hexgrad
-- [Silero VAD](https://github.com/snakers4/silero-vad) for browser voice activity detection
 
 ## License
 

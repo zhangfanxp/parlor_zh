@@ -35,13 +35,13 @@ def resolve_model_path() -> str:
 
 MODEL_PATH = resolve_model_path()
 SYSTEM_PROMPT = (
-    "You are a friendly, conversational AI assistant. The user is talking to you "
-    "through a microphone and showing you their camera. "
-    "You MUST always use the respond_to_user tool to reply. "
-    "First transcribe exactly what the user said, then write your response."
+    "你是一个友好的、能进行实时音视频互动的AI助手。用户正通过麦克风与你交谈，并通过摄像头展示画面。\n"
+    "你必须始终使用 respond_to_user 工具来回复用户。\n"
+    "你回复的语言必须与用户说话的语言完全一致（例如：如果用户说中文，你必须用中文回复；如果用英文，则用英文回复）。\n"
+    "请首先在 transcription 中准确记录用户说的话，然后在 response 中写下你的回复。"
 )
 
-SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
+SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?。！？])\s+')
 
 engine = None
 tts_backend = None
@@ -140,13 +140,13 @@ async def websocket_endpoint(ws: WebSocket):
                 content.append({"type": "image", "blob": msg["image"]})
 
             if msg.get("audio") and msg.get("image"):
-                content.append({"type": "text", "text": "The user just spoke to you (audio) while showing their camera (image). Respond to what they said, referencing what you see if relevant."})
+                content.append({"type": "text", "text": "用户刚刚对你说了话（音频），同时向你展示了摄像头画面（图像）。请用相同的语言回复他们说的话，如果相关的话可以提及你看到的内容。"})
             elif msg.get("audio"):
-                content.append({"type": "text", "text": "The user just spoke to you. Respond to what they said."})
+                content.append({"type": "text", "text": "用户刚刚对你说了话。请用相同的语言回复他们说的话。"})
             elif msg.get("image"):
-                content.append({"type": "text", "text": "The user is showing you their camera. Describe what you see."})
+                content.append({"type": "text", "text": "用户正在向你展示他们的摄像头。请描述你看到的内容（默认使用中文描述）。"})
             else:
-                content.append({"type": "text", "text": msg.get("text", "Hello!")})
+                content.append({"type": "text", "text": msg.get("text", "你好！")})
 
             # LLM inference
             t0 = time.time()

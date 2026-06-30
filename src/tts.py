@@ -1,15 +1,11 @@
-"""Platform-aware Kokoro TTS: mlx-audio on Apple Silicon, kokoro-onnx elsewhere."""
+"""Edge TTS Backend: cloud-based Microsoft Edge text-to-speech."""
 
+import asyncio
+import io
 import os
-import platform
-import sys
-from pathlib import Path
-
 import numpy as np
-
-
-def _is_apple_silicon() -> bool:
-    return sys.platform == "darwin" and platform.machine() == "arm64"
+import soundfile as sf
+import edge_tts
 
 
 class TTSBackend:
@@ -17,54 +13,58 @@ class TTSBackend:
 
     sample_rate: int = 24000
 
-    def generate(self, text: str, voice: str = "af_heart", speed: float = 1.1) -> np.ndarray:
+    def generate(self, text: str, voice: str = "zh-CN-XiaoxiaoNeural", speed: float = 1.1) -> np.ndarray:
         raise NotImplementedError
 
 
-class MLXBackend(TTSBackend):
-    """mlx-audio backend (Apple Silicon GPU via MLX)."""
+class EdgeTTSBackend(TTSBackend):
+    """edge-tts backend (Microsoft Edge cloud TTS)."""
 
     def __init__(self):
-        from mlx_audio.tts.generate import load_model
-
-        self._model = load_model("mlx-community/Kokoro-82M-bf16")
-        self.sample_rate = self._model.sample_rate
-        # Warmup: triggers pipeline init (phonemizer, spacy, etc.)
-        list(self._model.generate(text="Hello", voice="af_heart", speed=1.0))
-
-    def generate(self, text: str, voice: str = "af_heart", speed: float = 1.1) -> np.ndarray:
-        results = list(self._model.generate(text=text, voice=voice, speed=speed))
-        return np.concatenate([np.array(r.audio) for r in results])
-
-
-class ONNXBackend(TTSBackend):
-    """kokoro-onnx backend (ONNX Runtime, CPU)."""
-
-    def __init__(self):
-        import kokoro_onnx
-        from huggingface_hub import hf_hub_download
-
-        model_path = hf_hub_download("fastrtc/kokoro-onnx", "kokoro-v1.0.onnx")
-        voices_path = hf_hub_download("fastrtc/kokoro-onnx", "voices-v1.0.bin")
-
-        self._model = kokoro_onnx.Kokoro(model_path, voices_path)
         self.sample_rate = 24000
+        # Check default voice from environment or default to zh-CN-XiaoxiaoNeural
+        self.default_voice = os.environ.get("TTS_VOICE", "zh-CN-XiaoxiaoNeural")
 
-    def generate(self, text: str, voice: str = "af_heart", speed: float = 1.1) -> np.ndarray:
-        pcm, _sr = self._model.create(text, voice=voice, speed=speed)
-        return pcm
+    async def _generate_async(self, text: str, voice: str, speed: float) -> bytes:
+        # Convert speed to rate string (e.g. 1.1 -> "+10%", 0.9 -> "-10%")
+        percent = int((speed - 1.0) * 100)
+        rate = f"+{percent}%" if percent >= 0 else f"{percent}%"
+        
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        audio_data = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data += chunk["data"]
+        return audio_data
+
+    def generate(self, text: str, voice: str = "zh-CN-XiaoxiaoNeural", speed: float = 1.1) -> np.ndarray:
+        # If the voice is a Kokoro style voice (or default "af_heart"), map it to the default voice
+        if not voice or voice.startswith("af_") or voice.startswith("am_"):
+            voice = self.default_voice
+        
+        # Run async generation in a sync context safely
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                audio_bytes = executor.submit(lambda: asyncio.run(self._generate_async(text, voice, speed))).result()
+        else:
+            audio_bytes = asyncio.run(self._generate_async(text, voice, speed))
+        
+        if not audio_bytes:
+            return np.zeros(0, dtype=np.float32)
+            
+        # Decode MP3 to PCM float32 array
+        data, sr = sf.read(io.BytesIO(audio_bytes), dtype="float32")
+        return data
 
 
 def load() -> TTSBackend:
-    """Load the best available TTS backend for this platform."""
-    if _is_apple_silicon() and not os.environ.get("KOKORO_ONNX"):
-        try:
-            backend = MLXBackend()
-            print(f"TTS: mlx-audio (Apple GPU, sample_rate={backend.sample_rate})")
-            return backend
-        except ImportError:
-            print("TTS: mlx-audio not installed, falling back to kokoro-onnx")
-
-    backend = ONNXBackend()
-    print(f"TTS: kokoro-onnx (CPU, sample_rate={backend.sample_rate})")
+    """Load the Edge TTS backend."""
+    backend = EdgeTTSBackend()
+    print(f"TTS: edge-tts (Cloud, default_voice={backend.default_voice}, sample_rate={backend.sample_rate})")
     return backend
